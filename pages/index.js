@@ -1,4 +1,6 @@
 import React from 'react'
+import nookies from 'nookies';
+import jwt from 'jsonwebtoken';
 import styled from 'styled-components'
 import MainGrid from '../src/components/MainGrid'
 import Box from '../src/components/Box'
@@ -50,13 +52,9 @@ function ProfileRelationsBox(propriedades) {
   )
 }
 
-export default function Home() {
-  const githubUser = 'edneymoita';
-  const [comunities, setComunities] = React.useState([{
-    id: new Date().toISOString(),
-    title: 'Eu odeio acordar cedo',
-    image: 'https://alurakut.vercel.app/capa-comunidade-01.jpg'
-  }]);
+export default function Home(props) {
+  const githubUser = props.githubUser;
+  const [comunidades, setComunidades] = React.useState([]);
 
   const pessoasFavoritas = [
     'juunegreiros', 
@@ -77,6 +75,35 @@ export default function Home() {
     .then(function(respostaCompleta) {
       setSeguidores(respostaCompleta);
     })
+
+    // API GraphQL
+    fetch('https://graphql.datocms.com/', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'c7cdd15aa940651e3dcd33a5ac5cea',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ "query": `query {
+        allCommunities {
+          id 
+          title
+          imageUrl
+          creatorSlug
+        }
+      }` })
+    })
+    .then((response) => response.json()) // Pega o retorno do response.json() e já retorna
+    .then((respostaCompleta) => {
+      // const comunidadesVindasDoDato = respostaCompleta.data.allCommunities;
+      const comunidadesVindasDoDato = ['Odeio segundas feiras'];
+      console.log(comunidadesVindasDoDato)
+      setComunidades(comunidadesVindasDoDato)
+    })
+    // .then(function (response) {
+    //   return response.json()
+    // })
+
   }, [])
 
   // 1 - Criar um box que vai ter um map, baseado nos items do array
@@ -98,18 +125,34 @@ export default function Home() {
           </Box>
           <Box>
             <h2 className='subTitle'>Qual comunidade você quer criar?</h2>
-            <form onSubmit={function handleCreateComunity(e){
+            <form onSubmit={function handleCreateComunidade(e){
               e.preventDefault();
               const formData = new FormData(e.target);
 
-              const comunity = {
+              const comunidade = {
                   id: new Date().toISOString,
                   title: formData.get('title'),
-                  image: formData.get('image'),
+                  imageUrl: formData.get('image'),
+                  creatorSlug: githubUser,
               }
 
-              const newComunities = [...comunities, 'Alura Stars']
-              setComunities(newComunities)
+              const newComunidades = [...comunidades, comunidade]
+              setComunities(newComunidades)
+
+              fetch('/api/comunidades', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(comunidade)
+              })
+              .then(async (response) => {
+                const dados = await response.json();
+                console.log(dados.registroCriado);
+                const comunidade = dados.registroCriado;
+                const comunidadesAtualizadas = [...comunidades, comunidade];
+                setComunidades(comunidadesAtualizadas)
+              })              
             }}>
               <div>
                 <input 
@@ -136,15 +179,15 @@ export default function Home() {
           <ProfileRelationsBox title="Seguidores" items={seguidores} />
           <ProfileRelationsBoxWrapper>
             <h2 className='smallTitle'>
-                Comunidades ({comunities.length})
+                Comunidades ({comunidades.length})
             </h2>
 
             <ul>
-                {comunities.map((itemAtual) => {
+                {comunidades.map((itemAtual) => {
                   return (
                     <li key={itemAtual.id}>
-                      <a href={`/users/${itemAtual.title}`}>
-                        <img src={itemAtual.image} />
+                      <a href={`/comunidades/${itemAtual.id}`}>
+                        <img src={itemAtual.imageUrl} />
                         <span>{itemAtual.title}</span>
                       </a>
                     </li>
@@ -178,3 +221,31 @@ export default function Home() {
     </>
   )
 }
+
+
+export async function getServerSideProps(context) {
+  const cookies = nookies.get(context)
+  const token = cookies.USER_TOKEN;
+  const { isAuthenticated } = await fetch('https://alurakut.vercel.app/api/auth', {
+    headers: {
+        Authorization: token
+      }
+  })
+  .then((resposta) => resposta.json())
+
+  if(!isAuthenticated) {
+    return {
+      redirect: {
+        destination: '/login',
+        permanent: false,
+      }
+    }
+  }
+
+  const { githubUser } = jwt.decode(token);
+  return {
+    props: {
+      githubUser
+    }, // will be passed to the page component as props
+  }
+} 
